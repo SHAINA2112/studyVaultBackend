@@ -1,31 +1,33 @@
-import mongoose from 'mongoose';
+import mongoose from 'mongoose'
 
-/**
- * Connects to MongoDB using Mongoose.
- * Exits the process on failure so process managers (pm2, Docker, etc.)
- * can restart cleanly rather than running with a dead DB connection.
- */
+let isConnecting = null
+
 export default async function connectDB() {
+  mongoose.set('strictQuery', true)
+
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection
+  }
+
+  if (isConnecting) {
+    await isConnecting
+    return mongoose.connection
+  }
+
+  isConnecting = mongoose.connect(process.env.MONGO_URI, {
+    serverSelectionTimeoutMS: 10000,
+  })
+
   try {
-    mongoose.set('strictQuery', true);
+    const conn = await isConnecting
 
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
-      // Modern mongoose (8.x) no longer needs useNewUrlParser/useUnifiedTopology,
-      // they're defaults, but serverSelectionTimeoutMS is worth setting explicitly.
-      serverSelectionTimeoutMS: 10000,
-    });
+    console.log(`[db] MongoDB connected: ${conn.connection.host}/${conn.connection.name}`)
 
-    console.log(`[db] MongoDB connected: ${conn.connection.host}/${conn.connection.name}`);
-
-    mongoose.connection.on('error', (err) => {
-      console.error('[db] MongoDB connection error:', err.message);
-    });
-
-    mongoose.connection.on('disconnected', () => {
-      console.warn('[db] MongoDB disconnected');
-    });
+    return conn
   } catch (err) {
-    console.error('[db] Failed to connect to MongoDB:', err.message);
-    process.exit(1);
+    console.error('[db] Failed to connect to MongoDB:', err.message)
+    throw err
+  } finally {
+    isConnecting = null
   }
 }
